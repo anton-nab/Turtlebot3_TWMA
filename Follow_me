@@ -5,19 +5,18 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
 
-Targets = []
 
-NbTargetMax = 10
-SizeTarget = 2
-DegreeToTargetRaw = 40
-TargetAverageRange = 1.0
-TargetMinRange = 0.75
-TargetMaxRange = 1.25
+
+NbTargetMax = 100
+SizeTarget = 3
+DegreeToTargetRaw = 180
+TargetAverageRange = 0.5
+TargetMinRange = 0.2
+TargetMaxRange = 3.5
+TargetGapScan = 0.3
 
 CalculatedDegreeToTarget = DegreeToTargetRaw - SizeTarget
 HalfDegreeToTarget = DegreeToTargetRaw / 2  
-
-
 
 
 class FollowMe(Node):
@@ -27,6 +26,7 @@ class FollowMe(Node):
 
         self.ScanAnyDegree = []
         self.ScanFrontDegree = []
+        self.Targets = []
 
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
 
@@ -36,11 +36,11 @@ class FollowMe(Node):
             self.listener_callback,
             10)
         
-        def listener_callback(self, msg):
-            
-            self.SaveValueScan()
-            self.SaveChoiceScanDegree()
-            self.ReachTarget()
+    def listener_callback(self, msg):
+        
+        self.SaveValueScan(msg.ranges)
+        self.SaveChoiceScanDegree(self.ScanAnyDegree)
+        self.ReachTarget()
 
     # Sauvegarde les valeurs du Lydar dans le tableau Targets
 
@@ -64,18 +64,19 @@ class FollowMe(Node):
 
         self.ScanFrontDegree = []
 
-        for i in range(360 - HalfDegreeToTarget, 360):
+        for i in range(len(ScanTab) - int(HalfDegreeToTarget), len(ScanTab)):
             self.ScanFrontDegree.append(ScanTab[i])
+        
 
-        for i in range(HalfDegreeToTarget):
+        for i in range(int(HalfDegreeToTarget)):    
             self.ScanFrontDegree.append(ScanTab[i])
-
 
     #Permet le déplacement du robot
 
     def Move(self, x, z):
         
         order = Twist()
+
         order.angular.z = z
         order.linear.x  = x
         self.publisher_.publish(order)
@@ -83,40 +84,42 @@ class FollowMe(Node):
     def CalculatedMove(self, Tab):
         
         linearGap = Tab[0]
-        angularGap = Tab[1]
+        angularGap = Tab[1] 
 
-        x = TargetAverageRange - linearGap
-        y = - (20 - angularGap)
+        x = (TargetAverageRange - linearGap) / 5
+
+
+        y = (angularGap - HalfDegreeToTarget) / 50
+        
+
+        print(y)
+
+
+        self.Move(- x,  y)
         
 
     # Algorythme du "Follow me"
 
     def TargetSaver(self, i):
 
-        TargetMoy = (self.ScanAnyDegree[i] + self.ScanAnyDegree[i+1] + self.ScanAnyDegree[i+2] + self.ScanAnyDegree[i+3]) / 4
-
+        TargetMoy = (self.ScanFrontDegree[i] + self.ScanFrontDegree[i+1] + self.ScanFrontDegree[i+2]) / 3
         if(TargetMinRange < TargetMoy < TargetMaxRange):
 
-            Targets += [TargetMoy, i+1]
+            self.Targets.append([TargetMoy, i])
 
         i = 0 
-
-        return 0
 
     def TargetIdentifier(self, i):
 
         validation = 0
 
-        for j in [1, 2] : 
+        for j in [1, SizeTarget] : 
 
-            if self.ScanAnyDegree[i+j] > self.ScanAnyDegree[i] + 0.30 | self.ScanAnyDegree[i+j] < self.ScanAnyDegree[i] - 0.30:
+            if self.ScanFrontDegree[i+j] > self.ScanFrontDegree[i] + TargetGapScan or self.ScanFrontDegree[i+j] < self.ScanFrontDegree[i] - TargetGapScan:
 
                 break
 
             validation = validation + 1 
-
-        i = 0 
-        j = 0
 
         return validation
 
@@ -128,35 +131,35 @@ class FollowMe(Node):
             
             if validation == 2 :
 
-                self.TargetSaver()
+                self.TargetSaver(i)
 
     def ReachTarget(self):
 
         self.TargetCentral()
 
-        NbTarget = len(Targets)
-        
-        if NbTarget > NbTargetMax | NbTarget == 0 :
+        NbTarget = len(self.Targets)
+       
+        if NbTarget > NbTargetMax or NbTarget == 0 :
 
-            self.Move(0, 0)
+            self.Move(0.0, 0.0)
         
         elif NbTarget > 1 :
+            
+            mem = 0
 
-            mem = 10
+            for _ in range(NbTarget) :
 
-            for _ in range(NbTarget - 1) :
-
-                if Targets[_][0] < mem :
+                if self.Targets[_][0] < self.Targets[0][0] :
 
                     mem = _
 
-            self.CalculatedMove(Targets[mem])
+            self.CalculatedMove(self.Targets[mem])
 
         elif NbTarget == 1 :
 
-            self.CalculatedMove(Targets[0])
+            self.CalculatedMove(self.Targets[0])
         
-        Targets = []
+        self.Targets = []
 
 
 
