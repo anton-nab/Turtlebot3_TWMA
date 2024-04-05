@@ -2,15 +2,21 @@ import rclpy
 from rclpy.node import Node
 
 from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import Twist
 
-ScanAnyDegree = []
+
 Targets = []
 
-NbTargetMax = 7
+NbTargetMax = 10
 SizeTarget = 2
 DegreeToTargetRaw = 40
+TargetAverageRange = 1.0
+TargetMinRange = 0.75
+TargetMaxRange = 1.25
 
-CalculatedDegreeToTarget = DegreeToTargetRaw - SizeTarget 
+CalculatedDegreeToTarget = DegreeToTargetRaw - SizeTarget
+HalfDegreeToTarget = DegreeToTargetRaw / 2  
+
 
 
 
@@ -19,6 +25,9 @@ class FollowMe(Node):
     def __init__(self):
         super().__init__('FollowMe')
 
+        self.ScanAnyDegree = []
+        self.ScanFrontDegree = []
+
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
 
         self.subscription = self.create_subscription(
@@ -26,95 +35,135 @@ class FollowMe(Node):
             'scan',
             self.listener_callback,
             10)
-
-    
-    def listener_callback(self, msg):
-        self.get_logger().info('I heard: "%s"' % msg.data)
-
-
-# Permet le déplacement du robot
-
-def Move(Data):
-    #TODO
-    return Data
-
-def Unmove(args=None):
-    #TODO
-    return 0
-
-
-# Sauvegarde les valeurs du Lydar dans le tableau Targets
-
-def SaveValueScan(args=None):
-    #TODO
-    return 0
-
-
-# Algorythme du "Follow me"
-
-def TargetSaver(i):
-
-    TargetMoy = (ScanAnyDegree[i] + ScanAnyDegree[i+1] + ScanAnyDegree[i+2] + ScanAnyDegree[i+3]) / 4
-
-    if(1,5 < TargetMoy < 2):
-
-        Targets += [TargetMoy, i+1]
-
-    return 0
         
-def TargetIdentifier(i):
+        def listener_callback(self, msg):
+            
+            self.SaveValueScan()
+            self.SaveChoiceScanDegree()
+            self.ReachTarget()
 
-    validation = 0
+    # Sauvegarde les valeurs du Lydar dans le tableau Targets
 
-    for j in [1, 2] : 
-
-        if ScanAnyDegree[i+j] > ScanAnyDegree[i] + 0.30 | ScanAnyDegree[i+j] < ScanAnyDegree[i] - 0.30:
-
-            break
-
-        validation = validation + 1 
-
-    return validation
-
-def TargetCentral(args=None):
-    
-    for i in range(CalculatedDegreeToTarget) :
-
-        validation = TargetIdentifier(i)
+    def SaveValueScan(self, ValueTab):
+        ''''
+        Sauvegarde les valeurs du scan dans un tableau 
+        '''
         
-        if validation == 2 :
+        self.ScanAnyDegree = []
+        
+        for i in range(360):
 
-            TargetSaver()
+            try: 
+                val = float(ValueTab[i])
+            except:
+                val = 0
 
-def ReachTarget(args=None):
+            self.ScanAnyDegree.append(val)
+            
+    def SaveChoiceScanDegree(self, ScanTab):
 
-    NbTarget = len(Targets)
-    
-    if NbTarget > NbTargetMax | NbTarget == 0 :
+        self.ScanFrontDegree = []
 
-        Unmove()
-    
-    elif NbTarget > 1 :
+        for i in range(360 - HalfDegreeToTarget, 360):
+            self.ScanFrontDegree.append(ScanTab[i])
 
-        mem = 10
+        for i in range(HalfDegreeToTarget):
+            self.ScanFrontDegree.append(ScanTab[i])
 
-        for _ in range(NbTarget - 1) :
 
-            if Targets[_][0] < mem :
+    #Permet le déplacement du robot
 
-                mem = _
+    def Move(self, x, z):
+        
+        order = Twist()
+        order.angular.z = z
+        order.linear.x  = x
+        self.publisher_.publish(order)
 
-        Move(Targets[mem])
+    def CalculatedMove(self, Tab):
+        
+        linearGap = Tab[0]
+        angularGap = Tab[1]
 
-    elif NbTarget == 1 :
+        x = TargetAverageRange - linearGap
+        y = - (20 - angularGap)
+        
 
-        Move(Targets[0])
+    # Algorythme du "Follow me"
+
+    def TargetSaver(self, i):
+
+        TargetMoy = (self.ScanAnyDegree[i] + self.ScanAnyDegree[i+1] + self.ScanAnyDegree[i+2] + self.ScanAnyDegree[i+3]) / 4
+
+        if(TargetMinRange < TargetMoy < TargetMaxRange):
+
+            Targets += [TargetMoy, i+1]
+
+        i = 0 
+
+        return 0
+
+    def TargetIdentifier(self, i):
+
+        validation = 0
+
+        for j in [1, 2] : 
+
+            if self.ScanAnyDegree[i+j] > self.ScanAnyDegree[i] + 0.30 | self.ScanAnyDegree[i+j] < self.ScanAnyDegree[i] - 0.30:
+
+                break
+
+            validation = validation + 1 
+
+        i = 0 
+        j = 0
+
+        return validation
+
+    def TargetCentral(self):
+        
+        for i in range(CalculatedDegreeToTarget) :
+
+            validation = self.TargetIdentifier(i)
+            
+            if validation == 2 :
+
+                self.TargetSaver()
+
+    def ReachTarget(self):
+
+        self.TargetCentral()
+
+        NbTarget = len(Targets)
+        
+        if NbTarget > NbTargetMax | NbTarget == 0 :
+
+            self.Move(0, 0)
+        
+        elif NbTarget > 1 :
+
+            mem = 10
+
+            for _ in range(NbTarget - 1) :
+
+                if Targets[_][0] < mem :
+
+                    mem = _
+
+            self.CalculatedMove(Targets[mem])
+
+        elif NbTarget == 1 :
+
+            self.CalculatedMove(Targets[0])
+        
+        Targets = []
 
 
 
 
 
 def main(args=None):
+
     rclpy.init(args=args)
 
     follow_me = FollowMe()
