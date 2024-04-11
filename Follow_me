@@ -9,10 +9,10 @@ from geometry_msgs.msg import Twist
 
 NbTargetMax = 100
 SizeTarget = 3
-DegreeToTargetRaw = 180
+DegreeToTargetRaw = 60
 TargetAverageRange = 0.5
-TargetMinRange = 0.2
-TargetMaxRange = 3.5
+TargetMinRange = 0.1
+TargetMaxRange = 1.5
 TargetGapScan = 0.3
 
 CalculatedDegreeToTarget = DegreeToTargetRaw - SizeTarget
@@ -63,7 +63,7 @@ class FollowMe(Node):
     def SaveChoiceScanDegree(self, ScanTab):
 
         self.ScanFrontDegree = []
-
+        #-1 ?
         for i in range(len(ScanTab) - int(HalfDegreeToTarget), len(ScanTab)):
             self.ScanFrontDegree.append(ScanTab[i])
         
@@ -105,7 +105,7 @@ class FollowMe(Node):
         TargetMoy = (self.ScanFrontDegree[i] + self.ScanFrontDegree[i+1] + self.ScanFrontDegree[i+2]) / 3
         if(TargetMinRange < TargetMoy < TargetMaxRange):
 
-            self.Targets.append([TargetMoy, i])
+            self.Targets.append([TargetMoy, i+1])
 
         i = 0 
 
@@ -149,7 +149,7 @@ class FollowMe(Node):
 
             for _ in range(NbTarget) :
 
-                if self.Targets[_][0] < self.Targets[0][0] :
+                if self.Targets[_][0] < self.Targets[mem][0] :
 
                     mem = _
 
