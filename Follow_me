@@ -1,25 +1,28 @@
 import rclpy
 from rclpy.node import Node
+import math
 
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
-
-
-
 NbTargetMax = 100
-SizeTarget = 3
-DegreeToTargetRaw = 60
+SizeTarget = 100
+DegreeToTargetRaw = 180
 TargetAverageRange = 0.5
 TargetMinRange = 0.1
-TargetMaxRange = 1.5
-TargetGapScan = 0.3
+TargetMaxRange = 3.0
+TargetGapScan = 0.1
+SizeMinTarget = 5
 
 CalculatedDegreeToTarget = DegreeToTargetRaw - SizeTarget
-HalfDegreeToTarget = DegreeToTargetRaw / 2  
+HalfDegreeToTarget = DegreeToTargetRaw / 2
+
 
 
 class FollowMe(Node):
+
+    #  Initialisation et création du callback
+
 
     def __init__(self):
         super().__init__('FollowMe')
@@ -27,6 +30,7 @@ class FollowMe(Node):
         self.ScanAnyDegree = []
         self.ScanFrontDegree = []
         self.Targets = []
+        self.memPos = HalfDegreeToTarget
 
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
 
@@ -42,7 +46,9 @@ class FollowMe(Node):
         self.SaveChoiceScanDegree(self.ScanAnyDegree)
         self.ReachTarget()
 
+
     # Sauvegarde les valeurs du Lydar dans le tableau Targets
+
 
     def SaveValueScan(self, ValueTab):
         ''''
@@ -58,20 +64,24 @@ class FollowMe(Node):
             except:
                 val = 0
 
+            if val == "inf" : 
+                val = 0 
+
             self.ScanAnyDegree.append(val)
             
     def SaveChoiceScanDegree(self, ScanTab):
 
         self.ScanFrontDegree = []
-        #-1 ?
+
         for i in range(len(ScanTab) - int(HalfDegreeToTarget), len(ScanTab)):
             self.ScanFrontDegree.append(ScanTab[i])
         
-
         for i in range(int(HalfDegreeToTarget)):    
             self.ScanFrontDegree.append(ScanTab[i])
 
-    #Permet le déplacement du robot
+
+    # Gère les mouvements linéaire et angulaire du robot ################################################
+
 
     def Move(self, x, z):
         
@@ -83,83 +93,135 @@ class FollowMe(Node):
 
     def CalculatedMove(self, Tab):
         
-        linearGap = Tab[0]
-        angularGap = Tab[1] 
+        TargetMoyDist = Tab[0]
+        TargetMoyAngl = Tab[1] 
 
-        x = (TargetAverageRange - linearGap) / 5
+        x = (TargetAverageRange - TargetMoyDist) / 2.5
+        y = (TargetMoyAngl - HalfDegreeToTarget) / 25
 
-
-        y = (angularGap - HalfDegreeToTarget) / 50
-        
-
-        print(y)
-
+        print("Vitesse lineaire : ", x)
+        print("Vitesse Angulaire : ", y)
 
         self.Move(- x,  y)
         
+    # Création et filtrages des targets #################################################################
 
-    # Algorythme du "Follow me"
 
-    def TargetSaver(self, i):
+    def TargetSaver(self, premTarget, len):
 
-        TargetMoy = (self.ScanFrontDegree[i] + self.ScanFrontDegree[i+1] + self.ScanFrontDegree[i+2]) / 3
-        if(TargetMinRange < TargetMoy < TargetMaxRange):
+        TargetSom = 0
+        AngleMoy = 0
 
-            self.Targets.append([TargetMoy, i+1])
+        if premTarget + len > DegreeToTargetRaw : 
+            return 0
+        
+        print("Début target : ", premTarget)
+        print("Taille de la target", len)
 
-        i = 0 
+        for i in range(len):
+            TargetSom = TargetSom + self.ScanFrontDegree[premTarget + i]
+
+        TargetMoyDist = TargetSom / len
+
+        # print("Taille calculer de la target : ", TargetHeight)    
+        print("Distance moyenne de la target : ", TargetMoyDist)
+        AngleMoy = ( premTarget + (premTarget + len)) / 2
+        self.Targets.append([TargetMoyDist, AngleMoy, len])        
 
     def TargetIdentifier(self, i):
 
-        validation = 0
+        len = 1
+        
+        if TargetMinRange < self.ScanFrontDegree[i] < TargetMaxRange:
 
-        for j in [1, SizeTarget] : 
+            for j in range(DegreeToTargetRaw):
 
-            if self.ScanFrontDegree[i+j] > self.ScanFrontDegree[i] + TargetGapScan or self.ScanFrontDegree[i+j] < self.ScanFrontDegree[i] - TargetGapScan:
+                if i + j + 1 != DegreeToTargetRaw :
 
-                break
+                    if self.ScanFrontDegree[i+j+1] > self.ScanFrontDegree[i+j] + TargetGapScan or self.ScanFrontDegree[i+j+1] < self.ScanFrontDegree[i+j] - TargetGapScan:
+                        break
 
-            validation = validation + 1 
+                    len = len + 1
 
-        return validation
+                else :
+                    return len
+
+        return len
 
     def TargetCentral(self):
         
-        for i in range(CalculatedDegreeToTarget) :
+        i = 0
 
-            validation = self.TargetIdentifier(i)
-            
-            if validation == 2 :
+        while(i != DegreeToTargetRaw):
 
-                self.TargetSaver(i)
+            lenTarget = self.TargetIdentifier(i)
+            # print("taille de la cible présumer : ", lenTarget)
+            # print("Distance de la cible présumer : ", self.ScanFrontDegree[i])            
+
+            if lenTarget >= SizeMinTarget and lenTarget != 0 :
+                
+                TargetHeight = 0
+                ia = i + lenTarget - 1 - HalfDegreeToTarget
+                a1 = self.ScanFrontDegree[i + lenTarget - 1] 
+                a2 = math.cos(math.radians(ia))
+                a = a1 * a2
+                ib = i - HalfDegreeToTarget
+                b1 = self.ScanFrontDegree[i] 
+                b2 = math.cos(math.radians(ib))
+                b = b1 * b2
+
+                if ia > 0 and ib > 0:
+                    TargetHeight = b - a 
+                elif (ia > 0 and ib < 0) or (ia < 0  and ib > 0):
+                    TargetHeight = a + b   
+                elif ia < 0 and ib < 0 :
+                    TargetHeight = a - b  
+
+                print("a1 = ",a1," a2  = ", a2," a = ", a)
+                print("b1 = ",b1," b2  = ", b2, " b = ", b)
+                print("taille en m de la cible :  ", TargetHeight)
+                self.TargetSaver(i, lenTarget)
+                i = i + lenTarget
+
+            else : 
+                i = i + 1
+
+    
+    # Choix de la target ################################################################################
+
 
     def ReachTarget(self):
 
         self.TargetCentral()
 
         NbTarget = len(self.Targets)
-       
-        if NbTarget > NbTargetMax or NbTarget == 0 :
 
+        print("Nombre de target : ", NbTarget)
+
+        # print("Tableau de target : ")
+        # for i in range(len(self.Targets)):
+        # print( self.Targets[i])
+ 
+        if NbTarget > NbTargetMax or NbTarget == 0 :
             self.Move(0.0, 0.0)
         
         elif NbTarget > 1 :
-            
             mem = 0
 
             for _ in range(NbTarget) :
 
-                if self.Targets[_][0] < self.Targets[mem][0] :
-
+                if abs(self.Targets[_][1] - self.memPos) < abs(self.Targets[mem][1] - self.memPos) :
                     mem = _
 
+            self.memPos = self.Targets[mem][1]
+            print("Memoire de la position : ", self.memPos)
             self.CalculatedMove(self.Targets[mem])
 
         elif NbTarget == 1 :
-
             self.CalculatedMove(self.Targets[0])
         
         self.Targets = []
+
 
 
 
