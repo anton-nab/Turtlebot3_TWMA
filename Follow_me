@@ -8,15 +8,15 @@ from geometry_msgs.msg import Twist
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 NbTargetMax = 100
-SizeTarget = 100
 DegreeToTargetRaw = 180
-TargetAverageRange = 0.5
-TargetMinRange = 0.1
+TargetAverageRange = 0.3
+TargetMinRange = 0.001
 TargetMaxRange = 3.0
 TargetGapScan = 0.1
 SizeMinTarget = 5
+SizeMaxTarget = 100
 
-CalculatedDegreeToTarget = DegreeToTargetRaw - SizeTarget
+
 HalfDegreeToTarget = DegreeToTargetRaw / 2
 
 
@@ -149,7 +149,9 @@ class FollowMe(Node):
         # print("Taille calculer de la target : ", TargetHeight)    
         print("Distance moyenne de la target : ", TargetMoyDist)
         AngleMoy = ( premTarget + (premTarget + len)) / 2
-        self.Targets.append([TargetMoyDist, AngleMoy, len])        
+
+        if len < SizeMaxTarget :
+            self.Targets.append([TargetMoyDist, AngleMoy, len])        
 
     def TargetIdentifier(self, i):
 
