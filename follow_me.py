@@ -1,0 +1,279 @@
+import rclpy
+from rclpy.node import Node
+import math
+import time
+
+from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import Twist
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
+
+NbTargetMax = 100
+DegreeToTargetRaw = 80
+TargetAverageRange = 0.3
+TargetMinRange = 0.05
+TargetMaxRange = 3
+TargetGapScan = 0.1
+SizeMinTarget = 2
+SizeMaxTarget = 20
+
+
+HalfDegreeToTarget = DegreeToTargetRaw / 2
+
+
+class StopRobot(Node):
+    
+    
+    def __init__(self):
+        super().__init__('Stop_robot')
+
+        self.publisher = self.create_publisher(Twist, 'cmd_vel', 10)
+
+    def Move(self, x, z):
+        
+        order = Twist()
+
+        order.angular.z = z
+        order.linear.x  = x
+        self.publisher.publish(order)
+
+
+class FollowMe(Node):
+
+    #  Initialisation et création du callback
+
+
+    def __init__(self):
+        super().__init__('FollowMe')
+
+        self.ScanAnyDegree = []
+        self.ScanFrontDegree = []
+        self.Targets = []
+        self.memPos = HalfDegreeToTarget
+
+        self.publisher = self.create_publisher(Twist, 'cmd_vel', 10)
+
+        qos_profile = QoSProfile(
+        reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
+        history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+        depth=1)
+
+        self.subscription = self.create_subscription(
+            LaserScan,
+            'scan',
+            self.listener_callback,
+            qos_profile)
+        
+    def listener_callback(self, msg):
+        
+        self.SaveValueScan(msg.ranges)
+        self.SaveChoiceScanDegree(self.ScanAnyDegree)
+        self.ReachTarget()
+
+
+    # Sauvegarde les valeurs du Lydar dans le tableau Targets
+
+
+    def SaveValueScan(self, ValueTab):
+        ''''
+        Sauvegarde les valeurs du scan dans un tableau 
+        '''
+        
+        self.ScanAnyDegree = []
+        
+        for i in range(360):
+
+            try: 
+                val = float(ValueTab[i])
+            except:
+                val = 0
+
+            if val == "inf" : 
+                val = 0 
+
+            self.ScanAnyDegree.append(val)
+            
+    def SaveChoiceScanDegree(self, ScanTab):
+
+        self.ScanFrontDegree = []
+
+        for i in range(len(ScanTab) - int(HalfDegreeToTarget), len(ScanTab)):
+            self.ScanFrontDegree.append(ScanTab[i])
+        
+        for i in range(int(HalfDegreeToTarget)):    
+            self.ScanFrontDegree.append(ScanTab[i])
+
+
+    # Gère les mouvements linéaire et angulaire du robot ################################################
+
+
+    def Move(self, x, z):
+        
+        order = Twist()
+
+        order.angular.z = z
+        order.linear.x  = x
+        self.publisher.publish(order)
+
+    def CalculatedMove(self, Tab):
+        
+        TargetMoyDist = Tab[0]
+        TargetMoyAngl = Tab[1] 
+
+        x = (TargetAverageRange - TargetMoyDist) / 3 
+        y = (TargetMoyAngl - HalfDegreeToTarget) / 25
+
+        # print("Vitesse lineaire : ", x)
+        # print("Vitesse Angulaire : ", y)
+
+        self.Move(- x,  y)
+        
+    # Création et filtrages des targets #################################################################
+
+
+    def TargetSaver(self, premTarget, len):
+
+        TargetSom = 0
+        AngleMoy = 0
+
+        if premTarget + len > DegreeToTargetRaw : 
+            return 0
+        
+        #print("Début target : ", premTarget)
+        #print("Taille de la target", len)
+
+        for i in range(len):
+            TargetSom = TargetSom + self.ScanFrontDegree[premTarget + i]
+
+        TargetMoyDist = TargetSom / len
+
+        # print("Taille calculer de la target : ", TargetHeight)    
+        # print("Distance moyenne de la target : ", TargetMoyDist)
+        AngleMoy = ( premTarget + (premTarget + len)) / 2
+
+        if len < SizeMaxTarget :
+            self.Targets.append([TargetMoyDist, AngleMoy, len])        
+
+    def TargetIdentifier(self, i):
+
+        len = 1
+        
+        if TargetMinRange < self.ScanFrontDegree[i] < TargetMaxRange:
+
+            for j in range(DegreeToTargetRaw):
+
+                if i + j + 1 != DegreeToTargetRaw :
+
+                    if self.ScanFrontDegree[i+j+1] > self.ScanFrontDegree[i+j] + TargetGapScan or self.ScanFrontDegree[i+j+1] < self.ScanFrontDegree[i+j] - TargetGapScan:
+                        break
+
+                    len = len + 1
+
+                else :
+                    return len
+
+        return len
+
+    def TargetCentral(self):
+        
+        i = 0
+
+        while(i != DegreeToTargetRaw):
+
+            lenTarget = self.TargetIdentifier(i)
+            # print("taille de la cible présumer : ", lenTarget)
+            # print("Distance de la cible présumer : ", self.ScanFrontDegree[i])            
+
+            if lenTarget >= SizeMinTarget and lenTarget != 0 :
+                
+                # TargetHeight = 0
+                # ia = i + lenTarget - 1 - HalfDegreeToTarget
+                # a1 = self.ScanFrontDegree[i + lenTarget - 1] 
+                # a2 = math.cos(math.radians(ia))
+                # a = a1 * a2
+                # ib = i - HalfDegreeToTarget
+                # b1 = self.ScanFrontDegree[i] 
+                # b2 = math.cos(math.radians(ib))
+                # b = b1 * b2
+
+                # if ia > 0 and ib > 0:
+                #     TargetHeight = b - a 
+                # elif (ia > 0 and ib < 0) or (ia < 0  and ib > 0):
+                #     TargetHeight = a + b   
+                # elif ia < 0 and ib < 0 :
+                #     TargetHeight = a - b  
+
+                # print("a1 = ",a1," a2  = ", a2," a = ", a)
+                # print("b1 = ",b1," b2  = ", b2, " b = ", b)
+                # print("taille en m de la cible :  ", TargetHeight)
+                self.TargetSaver(i, lenTarget)
+                i = i + lenTarget
+
+            else : 
+                i = i + 1
+
+    
+    # Choix de la target ################################################################################
+
+
+    def ReachTarget(self):
+
+        self.TargetCentral()
+
+        NbTarget = len(self.Targets)
+
+        print("Nombre de target : ", NbTarget)
+
+        # print("Tableau de target : ")
+        # for i in range(len(self.Targets)):
+        # print( self.Targets[i])
+ 
+        if NbTarget > NbTargetMax or NbTarget == 0 :
+            self.Move(0.0, 0.0)
+        
+        elif NbTarget > 1 :
+            mem = 0
+
+            for _ in range(NbTarget) :
+
+                if abs(self.Targets[_][1] - self.memPos) + self.Targets[_][0] * 20 < abs(self.Targets[mem][1] - self.memPos) + self.Targets[mem][0] * 20:
+                    mem = _
+
+            print("Taille de la taille :)", self.Targets[mem][2])
+            self.CalculatedMove(self.Targets[mem])
+
+        elif NbTarget == 1 :
+            self.CalculatedMove(self.Targets[0])
+        
+        self.Targets = []
+
+
+def main(args=None):
+    try :
+        rclpy.init(args=args)
+    
+        follow_me = FollowMe()
+    
+        rclpy.spin(follow_me)
+
+    finally :
+
+        follow_me.destroy_node()
+        rclpy.shutdown()
+        time.sleep(0.1)
+        rclpy.init(args=args)
+        Robotstop = StopRobot()
+        
+        Robotstop.Move(0.0,0.0)
+        rclpy.spin_once(Robotstop)
+
+        # Destroy the node explicitly
+        # (optional - otherwise it will be done automatically
+        # when the garbage collector destroys the node object)
+        follow_me.destroy_node()
+        Robotstop.destroy_node()
+        rclpy.shutdown()
+        print("Fermeture propre du programme")
+    
+
+if __name__ == '__main__':
+    main()
