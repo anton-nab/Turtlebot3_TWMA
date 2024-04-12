@@ -1,0 +1,107 @@
+Planner Server : Génération des trajectoires sûres et efficaces pour que le robot atteigne sa destination.
+
+expected_planner_frequency : 20 -> 50
+fréquence du planificateur de trajectoire  	 	 	
+tolerance : 0.5 -> 0.2
+	 	 	planificateur de trajectoire plus strict
+
+
+Local Costmap : Localisation proche du robot pour les obstacles.
+
+	update_frequency : 5 -> 10
+		fréquence de mise à jour de la carte locale (obstacle, changement de map…)
+
+publish_frequency : 2 -> 5
+publier plus fréquemment la carte locale planification de la trajectoire
+      
+ inflation_radius: 0.5 -> 0.2
+s'approcher davantage des obstacles
+Global Costmap : Localisation globale du robot pour planification de trajectoire.
+
+update_frequency : 1 -> 5
+		fréquence de mise à jour de la carte globale (obstacle, changement de map…)
+
+publish_frequency : 1 -> 5
+publier plus fréquemment la carte locale planification de la trajectoire
+
+inflation_radius: 0.55 -> 0.2
+planification de trajectoire d'être plus proche des obstacles
+
+
+Recoveries Server : Stratégies de récupération en cas d'échec ou de situation imprévue pendant la navigation du robot. 
+
+	 max_rotational_vel : 5 -> 15
+		 augmenter la vitesse de rotation maximale
+
+
+Waypoint Follower : Ensemble prédéfini de points de passage (waypoints) pour que le robot atteigne sa destination. 
+
+loop_rate : 2000 ->5000
+	 fréquence à laquelle le suiveur de points de passage (waypoints) est mis à jour (précision)
+
+Controller Server : Gérer et de superviser les actions de contrôle du robot (moteur…).
+
+acc_lim_x : 2.5 -> 8
+
+max_vel_x : 0.22 -> 8
+
+AMCL : Adaptive Monte Carlo Localization, algorithme de localisation probabiliste 
+
+beam_skip_distance: 0.5 -> 1.0
+
+le robot doit parcourt distance plus longue avant que de nouvelles mesures laser soient prises en compte (réduction la charge de calcul en sautant des mises à jour redondantes lorsque le robot se déplace lentement ou reste immobile)	 
+	 	
+beam_skip_error_threshold: 0.9 -> 2.0
+mise à jour la position estimée du robot avec les nouvelles mesures laser (permet d’éviter les erreurs de localisation lorsqu'il y a des incertitudes importantes dans les données du capteur)
+
+   	beam_skip_threshold: 0.3 -> 0.2
+attend que le robot parcourt une distance plus longue avant de commencer à utiliser les nouvelles mesures laser pour la mise à jour de la position estimée.
+
+
+
+Améliorer la détection d’objets proches et le demi tour
+
+do_beamskip: false -> true  
+activer la détection des collisions
+
+   	beam_skip_distance: 1.0 -> 2.0  
+augmenter la distance de saut de faisceau
+
+    	beam_skip_error_threshold: 2.0 -> 1.0 
+réduire le seuil d'erreur de saut de faisceau
+
+robot_radius : 0.1 -> 0.05
+	réduire la taille du rayon du robot pour qu'il corresponde à la taille réelle du robot.
+
+
+
+
+
+
+
+	 	 	 	
+
+
+ 
+
+
+
+
+ 	
+
+
+
+
+
+
+
+	 	 	 	
+
+
+ 
+
+
+
+
+ 	
+
