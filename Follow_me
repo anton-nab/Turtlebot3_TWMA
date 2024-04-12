@@ -4,6 +4,7 @@ import math
 
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 NbTargetMax = 100
 SizeTarget = 100
@@ -17,6 +18,22 @@ SizeMinTarget = 5
 CalculatedDegreeToTarget = DegreeToTargetRaw - SizeTarget
 HalfDegreeToTarget = DegreeToTargetRaw / 2
 
+
+class StopRobot(Node):
+    
+    
+    def __init__(self):
+        super().__init__('Stop robot')
+
+        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
+
+    def Move(self, x, z):
+        
+        order = Twist()
+
+        order.angular.z = z
+        order.linear.x  = x
+        self.publisher_.publish(order)
 
 
 class FollowMe(Node):
@@ -34,11 +51,16 @@ class FollowMe(Node):
 
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
 
+        qos_profile = QoSProfile(
+        reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
+        history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+        depth=1)
+
         self.subscription = self.create_subscription(
             LaserScan,
             'scan',
             self.listener_callback,
-            10)
+            qos_profile)
         
     def listener_callback(self, msg):
         
@@ -228,19 +250,32 @@ class FollowMe(Node):
 
 
 def main(args=None):
+    try :
+        rclpy.init(args=args)
+    
+        follow_me = FollowMe()
+    
+        rclpy.spin(follow_me)
 
-    rclpy.init(args=args)
+    finally :
 
-    follow_me = FollowMe()
+        follow_me.destroy_node()
+        rclpy.shutdown()
+        time.sleep(0.1)
+        rclpy.init(args=args)
+        Robotstop = StopRobot()
+        
+        Robotstop.Move(0.0,0.0)
+        rclpy.spin_once(Robotstop)
 
-    rclpy.spin(follow_me)
-
-    # Destroy the node explicitly
-    # (optional - otherwise it will be done automatically
-    # when the garbage collector destroys the node object)
-    follow_me.destroy_node()
-    rclpy.shutdown()
-
+        # Destroy the node explicitly
+        # (optional - otherwise it will be done automatically
+        # when the garbage collector destroys the node object)
+        follow_me.destroy_node()
+        Robotstop.destroy_node()
+        rclpy.shutdown()
+        print("Fermeture propre du programme")
+    
 
 if __name__ == '__main__':
     main()
